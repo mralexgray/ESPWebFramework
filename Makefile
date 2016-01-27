@@ -1,10 +1,13 @@
 
-SPEED 			= 230400 ## vs. 115200
-BUILD_DIR 	= build
-SRCDIR 			= ./src/
-WWW_DIR			= ./webcontent/
-WWW_BIN     = webcontent.bin
-WWW_MAXSIZE	= 57344
+SPEED 			:= 230400 ## vs. 115200
+SRCDIR 			:= src
+WWW_DIR			:= www
+WWW_BIN     := webcontent.bin
+SDKBASE			:= sdk
+WWW_MAXSIZE	:= 57344
+
+          BUILD_DIR := build/debug
+release:  BUILD_DIR := build/release
 
 # linking libgccirom.a instead of libgcc.a causes reset when working with flash memory (ie spi_flash_erase_sector)
 # linking libcirom.a causes conflicts with come std c routines (like strstr, strchr...)
@@ -15,7 +18,8 @@ LIBS        = -lminic -lm -lgcc -lhal -lphy -lpp -lnet80211 -lwpa -lmain -lfreer
 ROOT_DIR :=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST)))) 
 
 # let's assume the SDK is up there.
-SDKBASE := $(shell dirname $(shell dirname $(ROOT_DIR)))/SDK/
+
+#$(shell dirname $(shell dirname $(ROOT_DIR)))/SDK/
 
 # homebrew installs the toolchain, but neglects to put it in your $PATH
 ifeq ($(shell uname), Darwin)
@@ -44,8 +48,8 @@ RTOS       := esp_iot_rtos_sdk-master
 RTOS_BASE  := $(SDKBASE)$(RTOS)/include
 INCLUDES   := -I $(RTOS_BASE)
 INCLUDES   += $(addprefix -I $(RTOS_BASE)/, espressif lwip lwip/lwip lwip/ipv4 lwip/ipv6)
-INCLUDES   += -I $(SDKBASE)$(RTOS)/extra_include
-INCLUDES   += -I $(SDKBASE)$(XELF)/xtensa-lx106-elf/include
+INCLUDES   += -I $(SDKBASE)/$(RTOS)/extra_include
+INCLUDES   += -I $(SDKBASE)/$(XELF)/xtensa-lx106-elf/include
 
 # don't change -Os (or add other -O options) otherwise FLASHMEM and FSTR data will be duplicated in RAM
 CFLAGS      = -g -Os -Wpointer-arith -Wundef -Werror -Wl,-EL 	\
@@ -57,9 +61,9 @@ CFLAGS      = -g -Os -Wpointer-arith -Wundef -Werror -Wl,-EL 	\
 LDFLAGS     = -nostdlib -Wl,--no-check-sections -u call_user_start -Wl,-static -Wl,--gc-sections
 LD_SCRIPT   = eagle.app.v6.ld
 
-SDK_LIBDIR := -L$(SDKBASE)esp_iot_rtos_sdk-master/lib
-ELF_LIBDIR := -L$(SDKBASE)xtensa-lx106-elf/lib
-SDK_LDDIR   = $(SDKBASE)esp_iot_rtos_sdk-master/ld
+SDK_LIBDIR := -L$(SDKBASE)/esp_iot_rtos_sdk-master/lib
+ELF_LIBDIR := -L$(SDKBASE)/xtensa-lx106-elf/lib
+SDK_LDDIR   = $(SDKBASE)/esp_iot_rtos_sdk-master/ld
 
 OBJ  			 := $(addprefix $(BUILD_DIR)/, user_main.o fdvserial.o fdvsync.o fdvutils.o fdvflash.o 						\
 																				 fdvprintf.o fdvdebug.o fdvstrings.o fdvnetwork.o fdvcollections.o 	\
@@ -93,10 +97,10 @@ $(BINS): $(TARGET_OUT)
 $(BUILD_DIR)/libuser.a: $(OBJ)
 	$(AR) cru $@ $^
 	
-$(BUILD_DIR)/%.o: $(SRCDIR)%.c $(wildcard $(SRCDIR)*.h)
+$(BUILD_DIR)/%.o: $(SRCDIR)/%.c $(wildcard $(SRCDIR)/*.h)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-$(BUILD_DIR)/%.o: $(SRCDIR)%.cpp $(wildcard $(SRCDIR)*.h)
+$(BUILD_DIR)/%.o: $(SRCDIR)/%.cpp $(wildcard $(SRCDIR)/*.h)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 ESP_CMD := $(ESPTOOL) --port $(PORT) --baud $(SPEED)
