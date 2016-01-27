@@ -1,6 +1,6 @@
 
 SPEED 			= 230400 ## vs. 115200
-SRCDIR 			= src
+SRCDIR 			= src/
 WWW_DIR			= www
 WWW_BIN     = webcontent.bin
 WWW_MAXSIZE	= 57344
@@ -10,11 +10,11 @@ COMPRESSOR  = binarydir.py
 ROOT_DIR :=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST)))) 
 
 # let's assume the SDK is up there.
-SDKBASE := sdk
+SDKBASE := sdk/
 # $(shell dirname $(shell dirname $(ROOT_DIR)))/SDK/
 
-					BUILD_DIR 	= build/debug
-release:  BUILD_DIR 	= build/release
+					BUILD_DIR := build/debug
+release:  BUILD_DIR := build/release
 
 # homebrew installs the toolchain, but neglects to put it in your $PATH
 ifeq ($(shell uname), Darwin)
@@ -47,7 +47,8 @@ INCLUDES   += -I $(SDKBASE)$(RTOS)/extra_include
 INCLUDES   += -I $(SDKBASE)$(XELF)/xtensa-lx106-elf/include
 
 # don't change -Os (or add other -O options) otherwise FLASHMEM and FSTR data will be duplicated in RAM
-CFLAGS      = -g -save-temps -Os -Wpointer-arith -Wundef -Werror -Wl,-EL 	\
+# 
+CFLAGS      = -g -save-temps -Os -Wpointer-arith -Werror -Wundef -Wl,-EL 	\
               -nostdlib -mlongcalls -mtext-section-literals 							\
               -fno-exceptions -fno-rtti -fno-inline-functions             \
               -fno-threadsafe-statics -fno-use-cxa-atexit                 \
@@ -58,8 +59,9 @@ LD_SCRIPT   = eagle.app.v6.ld
 
 SDK_LIBDIR := -L$(SDKBASE)esp_iot_rtos_sdk-master/lib
 ELF_LIBDIR := -L$(SDKBASE)xtensa-lx106-elf/lib
-SDK_LDDIR   = $(SDKBASE)esp_iot_rtos_sdk-master/ld
+SDK_LDDIR   = $(SDKBASE)esp_iot_rtos_sdk-master/ld#
 
+# SOURCES    := $(wildcard $(SRCDIR)/*.cpp)
 OBJ  			 := $(addprefix $(BUILD_DIR)/, user_main.o fdvserial.o fdvsync.o fdvutils.o fdvflash.o 						\
 																				 fdvprintf.o fdvdebug.o fdvstrings.o fdvnetwork.o fdvcollections.o 	\
 																				 fdvconfmanager.o fdvdatetime.o fdvserialserv.o fdvtask.o fdvgpio.o)
@@ -70,7 +72,7 @@ BINS       := $(addprefix $(TARGET_OUT),-0x00000.bin -0x11000.bin)
 
 WWW_CONTENT = $(BUILD_DIR)/$(WWW_BIN)
 
-.PHONY: all flash clean flashweb flashdump flasherase fresh mkdirs $(WWW_CONTENT)
+.PHONY: all flash clean flashweb flashdump flasherase fresh mkdirs objcopy maps
 
 all: mkdirs $(BINS)
 
@@ -79,14 +81,22 @@ mkdirs:
 
 $(TARGET_OUT): $(BUILD_DIR)/libuser.a
 	$(LD) $(ELF_LIBDIR) $(SDK_LIBDIR) -T$(SDK_LDDIR)/$(LD_SCRIPT) \
-	      -Wl,-M >out.map $(LDFLAGS) 															\
+	      -Wl,-M > $(BUILD_DIR)/out.map $(LDFLAGS) 								\
 	      -Wl,--start-group $(LIBS) $^				 										\
 	      -Wl,--end-group -o $@
-	$(OD) -h -j .data -j .rodata -j .bss -j .text -j .irom0.text $@
-	$(OD) -t -j .text $@ >$(BUILD_DIR)/_text_content.map
-	$(OD) -t -j .irom0.text $@ > $(BUILD_DIR)/_irom0_text_content.map
 
-$(BINS): $(TARGET_OUT)
+$(BUILD_DIR)/_text_content.map: $(TARGET_OUT)
+	$(OD) --syms --section=.text $^ > $@
+
+$(BUILD_DIR)/_irom0_text_content.map: $(TARGET_OUT)
+	$(OD) --syms --section=.irom0.text $^ > $@
+
+objcopy: $(TARGET_OUT)
+	$(OD) --headers -j .data -j .rodata -j .bss -j .text -j .irom0.text $^
+
+maps: objcopy $(addprefix $(BUILD_DIR)/, _text_content.map _irom0_text_content.map)
+
+$(BINS): $(TARGET_OUT) maps
 	$(ESPTOOL) elf2image $^
 
 $(BUILD_DIR)/libuser.a: $(OBJ)
@@ -117,11 +127,12 @@ flasherase: needs_port
 	$(ESPTOOL) --port $(PORT) erase_flash
 	
 
-					CLEAN_CMD := -rm -rf $(BUILD_DIR)
-release:  CLEAN_CMD := git checkout master -- $(BUILD_DIR)
+					CLEAN_CMD = rm -rf $(BUILD_DIR)
+release:  CLEAN_CMD = git checkout master -- $(BUILD_DIR)
 
 clean:
-	# -rm -f *.(a|o|out|bin|ii|s|expand|map|dump|hex) 
+	rm -rf $(BUILD_DIR)
+	@-rm -f *.(ii|s|map) 
 	$(CLEAN_CMD)
 
 fresh: clean $(BINS) flash
