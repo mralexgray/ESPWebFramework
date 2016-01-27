@@ -1,30 +1,29 @@
 
 SPEED 			= 230400 ## vs. 115200
-BUILD_DIR 	= build
-SRCDIR 			= ./src/
-WWW_DIR			= ./webcontent.alt/
+SRCDIR 			= src
+WWW_DIR			= www
 WWW_BIN     = webcontent.bin
 WWW_MAXSIZE	= 57344
-
-# linking libgccirom.a instead of libgcc.a causes reset when working with flash memory (ie spi_flash_erase_sector)
-# linking libcirom.a causes conflicts with come std c routines (like strstr, strchr...)
-LIBS        = -lminic -lm -lgcc -lhal -lphy -lpp -lnet80211 -lwpa -lmain -lfreertos -llwip
-
+COMPRESSOR  = binarydir.py
 
 # this directory
 ROOT_DIR :=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST)))) 
 
 # let's assume the SDK is up there.
-SDKBASE := $(shell dirname $(shell dirname $(ROOT_DIR)))/SDK/
+SDKBASE := sdk
+# $(shell dirname $(shell dirname $(ROOT_DIR)))/SDK/
+
+					BUILD_DIR 	= build/debug
+release:  BUILD_DIR 	= build/release
 
 # homebrew installs the toolchain, but neglects to put it in your $PATH
 ifeq ($(shell uname), Darwin)
 	SHELL 		 	:= $(shell which zsh)
-	PORT 			 	:= $(lastword $(wildcard /dev/tty.*))
+	PORT 			 	?= $(lastword $(wildcard /dev/tty.*))
 	BIN_EXEC 	 	:= /opt/xtensa-lx106-elf/bin/
 	export PATH := $(BIN_EXEC)subst:$(PATH)
 else
-	PORT 			 	:= COM7
+	PORT 			 	?= COM7
 	# get SDK path from environment variable ESP8266SDK
 	SDKBASE  	 	?= $(subst \,/,$(ESP8266SDK))
 endif
@@ -105,7 +104,7 @@ flash: needs_port flashweb
 	-$(ESP_CMD) write_flash 0x11000 $(TARGET_OUT)-0x11000.bin 0x00000 $(TARGET_OUT)-0x00000.bin
 
 $(WWW_CONTENT):
-	python binarydir.py $(WWW_DIR) $@ $(WWW_MAXSIZE)
+	python $(COMPRESSOR) $(WWW_DIR) $@ $(WWW_MAXSIZE)
 
 flashweb: $(WWW_CONTENT)
 	-$(ESP_CMD) write_flash $(WWW_ADDRS) $^
@@ -117,9 +116,13 @@ flashdump: needs_port
 flasherase: needs_port
 	$(ESPTOOL) --port $(PORT) erase_flash
 	
+
+					CLEAN_CMD := -rm -rf $(BUILD_DIR)
+release:  CLEAN_CMD := git checkout master -- $(BUILD_DIR)
+
 clean:
 	# -rm -f *.(a|o|out|bin|ii|s|expand|map|dump|hex) 
-	-rm -rf $(BUILD_DIR)
+	$(CLEAN_CMD)
 
 fresh: clean $(BINS) flash
 
