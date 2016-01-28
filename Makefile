@@ -40,7 +40,7 @@ COMPRESSOR := script/binarydir.py
 
 RTOS       := esp_iot_rtos_sdk-master
 RTOS_BASE  := $(SDKBASE)/$(RTOS)/include
-INCLUDES   := -I $(RTOS_BASE)
+INCLUDES   := -I include -I $(RTOS_BASE)
 INCLUDES   += $(addprefix -I $(RTOS_BASE)/, espressif lwip lwip/lwip lwip/ipv4 lwip/ipv6)
 INCLUDES   += -I $(SDKBASE)/$(RTOS)/extra_include
 INCLUDES   += -I $(SDKBASE)/$(XELF)/xtensa-lx106-elf/include
@@ -62,9 +62,10 @@ SDK_LDDIR   = $(SDKBASE)/esp_iot_rtos_sdk-master/ld
           BUILD_DIR := build/debug
 release:  BUILD_DIR := build/release
 
-OBJ  			 := $(addprefix $(BUILD_DIR)/, user_main.o fdvserial.o fdvsync.o fdvutils.o fdvflash.o 						\
-																				 fdvprintf.o fdvdebug.o fdvstrings.o fdvnetwork.o fdvcollections.o 	\
-																				 fdvconfmanager.o fdvdatetime.o fdvserialserv.o fdvtask.o fdvgpio.o)
+OBJ  			 := $(addprefix $(BUILD_DIR)/, 																									\
+							$(addsuffix .o, user_main 																									\
+							$(addprefix fdv_, serial sync utils flash printf debug strings network 			\
+																collections confmanager datetime serialserv task gpio)))
 WWW_ADDRS		= 0x6D000
 
 TARGET_OUT := $(BUILD_DIR)/app.out
