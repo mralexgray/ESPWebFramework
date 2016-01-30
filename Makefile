@@ -38,15 +38,17 @@ OD         := $(BIN_EXEC)/$(XELF)-objdump
 ESPTOOL    := python $(SDKBASE)/esptool.py
 COMPRESSOR := script/binarydir.py
 
-RTOS       := esp_iot_rtos_sdk-master
-RTOS_BASE  := $(SDKBASE)/$(RTOS)/include
+RTOS       := esp_iot_rtos_sdk
+RTOS_SDK   := $(SDKBASE)/$(RTOS)
+RTOS_BASE  := $(RTOS_SDK)/include
 INCLUDES   := -I include -I $(RTOS_BASE)
 INCLUDES   += $(addprefix -I $(RTOS_BASE)/, espressif lwip lwip/lwip lwip/ipv4 lwip/ipv6)
-INCLUDES   += -I $(SDKBASE)/$(RTOS)/extra_include
+INCLUDES   += -I $(RTOS_SDK)/extra_include
 INCLUDES   += -I $(SDKBASE)/$(XELF)/xtensa-lx106-elf/include
 
 # don't change -Os (or add other -O options) otherwise FLASHMEM and FSTR data will be duplicated in RAM
-CFLAGS      = -g -Os -Wpointer-arith -Wundef -Werror -Wl,-EL  \
+# -Werror
+CFLAGS      = -g -Os -Wpointer-arith -Wundef  -Wl,-EL  \
               -nostdlib -mlongcalls -mtext-section-literals   \
               -fno-exceptions -fno-rtti -fno-inline-functions \
               -fno-threadsafe-statics -fno-use-cxa-atexit     \
@@ -55,9 +57,9 @@ CFLAGS      = -g -Os -Wpointer-arith -Wundef -Werror -Wl,-EL  \
 LDFLAGS     = -nostdlib -Wl,--no-check-sections -u call_user_start -Wl,-static -Wl,--gc-sections
 LD_SCRIPT   = eagle.app.v6.ld
 
-SDK_LIBDIR := -L$(SDKBASE)/esp_iot_rtos_sdk-master/lib
+SDK_LIBDIR := -L$(RTOS_SDK)/lib
 ELF_LIBDIR := -L$(SDKBASE)/xtensa-lx106-elf/lib
-SDK_LDDIR   = $(SDKBASE)/esp_iot_rtos_sdk-master/ld
+SDK_LDDIR   = $(RTOS_SDK)/ld
 
           BUILD_DIR := build/debug
 release:  BUILD_DIR := build/release
@@ -78,7 +80,12 @@ WWW_CONTENT = $(BUILD_DIR)/$(WWW_BIN)
 
 all: mkdirs $(BINS)
 
-mkdirs:
+MODULES    := sdk/esp_iot_rtos_sdk 
+
+$(MODULES): .gitmodules
+	git submodule update --init --recursive
+
+mkdirs: $(MODULES)
 	@-mkdir -p $(BUILD_DIR)
 
 $(TARGET_OUT): $(BUILD_DIR)/libuser.a
