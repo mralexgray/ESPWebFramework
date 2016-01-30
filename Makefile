@@ -1,18 +1,15 @@
 
-# this directory
-ROOT_DIR :=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+# CONFIG
 
 SPEED 			:= 230400 ## vs. 115200
-SRCDIR 			:= src
-WWW_DIR			:= www
-WWW_BIN     := webcontent.bin
-SDKBASE			?= $(ROOT_DIR)/sdk
-#$(shell dirname $(shell dirname $(ROOT_DIR)))/SDK/
-WWW_MAXSIZE	:= 57344
-
 # linking libgccirom.a instead of libgcc.a causes reset when working with flash memory (ie spi_flash_erase_sector)
 # linking libcirom.a causes conflicts with come std c routines (like strstr, strchr...)
-LIBS        = -lminic -lm -lgcc -lhal -lphy -lpp -lnet80211 -lwpa -lmain -lfreertos -llwip
+LINK_LIBS   := minic m gcc hal phy pp net80211 wpa main freertos lwip
+
+# END CONFIG
+
+          BUILD_DIR := build/debug
+release:  BUILD_DIR := build/release
 
 # homebrew installs the toolchain, but neglects to put it in your $PATH
 ifeq ($(shell uname), Darwin)
@@ -26,6 +23,24 @@ else
 	SDKBASE  	 	?= $(subst \,/,$(ESP8266SDK))
 endif
 
+# this directory
+ROOT_DIR   :=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+SDKBASE		 ?= $(ROOT_DIR)/sdk
+SRCDIR 		 := src
+
+WWW_DIR		 := www
+WWW_BIN    := webcontent.bin
+WWW_MAXSZ	 := 57344
+COMPRESSOR := script/binarydir.py
+
+# paths and executables
+ESPTOOL    := python $(SDKBASE)/esptool.py
+ESP_CMD 	 := $(ESPTOOL) --port $(PORT) --baud $(SPEED)
+
+RTOS       := esp_iot_rtos_sdk
+RTOS_SDK   := $(SDKBASE)/$(RTOS)
+RTOS_BASE  := $(RTOS_SDK)/include
+
 XELF 			 := xtensa-lx106-elf
 AR         := $(BIN_EXEC)/$(XELF)-ar
 CC         := $(BIN_EXEC)/$(XELF)-g++
@@ -35,49 +50,46 @@ NM         := $(BIN_EXEC)/xt-nm
 OBJCOPY    := $(BIN_EXEC)/$(XELF)-objcopy
 OD         := $(BIN_EXEC)/$(XELF)-objdump
 
-ESPTOOL    := python $(SDKBASE)/esptool.py
-COMPRESSOR := script/binarydir.py
+LIBS       := $(addprefix -l, $(LINK_LIBS))
 
-RTOS       := esp_iot_rtos_sdk-master
-RTOS_BASE  := $(SDKBASE)/$(RTOS)/include
-INCLUDES   := -I $(RTOS_BASE)
+# options/flags/inlcudes
+
+INCLUDES   := -I include -I $(RTOS_BASE)
 INCLUDES   += $(addprefix -I $(RTOS_BASE)/, espressif lwip lwip/lwip lwip/ipv4 lwip/ipv6)
-INCLUDES   += -I $(SDKBASE)/$(RTOS)/extra_include
+INCLUDES   += -I $(RTOS_SDK)/extra_include
 INCLUDES   += -I $(SDKBASE)/$(XELF)/xtensa-lx106-elf/include
-
+FORCE_NO   := exceptions rtti inline-functions threadsafe-statics use-cxa-atexit
+YES_WARN   := pointer-arith undef error
 # don't change -Os (or add other -O options) otherwise FLASHMEM and FSTR data will be duplicated in RAM
-CFLAGS      = -g -Os -Wpointer-arith -Wundef -Werror -Wl,-EL  \
+CFLAGS      = -g -Os $(addprefix -W, $(YES_WARN)) -Wl,-EL \
               -nostdlib -mlongcalls -mtext-section-literals   \
-              -fno-exceptions -fno-rtti -fno-inline-functions \
-              -fno-threadsafe-statics -fno-use-cxa-atexit     \
+              $(addprefix -fno-, $(FORCE_NO))                 \
               -DICACHE_FLASH -D__ets__
-
+              
 LDFLAGS     = -nostdlib -Wl,--no-check-sections -u call_user_start -Wl,-static -Wl,--gc-sections
 LD_SCRIPT   = eagle.app.v6.ld
 
-SDK_LIBDIR := -L$(SDKBASE)/esp_iot_rtos_sdk-master/lib
+SDK_LIBDIR := -L$(RTOS_SDK)/lib
 ELF_LIBDIR := -L$(SDKBASE)/xtensa-lx106-elf/lib
-SDK_LDDIR   = $(SDKBASE)/esp_iot_rtos_sdk-master/ld
-
-          BUILD_DIR := build/debug
-release:  BUILD_DIR := build/release
-
-OBJ  			 := $(addprefix $(BUILD_DIR)/, user_main.o fdvserial.o fdvsync.o fdvutils.o fdvflash.o 						\
-																				 fdvprintf.o fdvdebug.o fdvstrings.o fdvnetwork.o fdvcollections.o 	\
-																				 fdvconfmanager.o fdvdatetime.o fdvserialserv.o fdvtask.o fdvgpio.o)
-WWW_ADDRS		= 0x6D000
+SDK_LDDIR   = $(RTOS_SDK)/ld
 
 TARGET_OUT := $(BUILD_DIR)/app.out
-
 BINS       := $(addprefix $(TARGET_OUT),-0x00000.bin -0x11000.bin)
-
+OBJ  			 := $(addprefix $(BUILD_DIR)/, 																									\
+							$(addsuffix .o, user_main 																									\
+							$(addprefix fdv_, serial sync utils flash printf debug strings network 			\
+																collections confmanager datetime serialserv task gpio)))
 WWW_CONTENT = $(BUILD_DIR)/$(WWW_BIN)
+WWW_ADDRS		= 0x6D000
 
-.PHONY: all flash clean flashweb flashdump flasherase fresh mkdirs
+.PHONY: all flash clean flashweb flashdump flasherase fresh mkdirs submodules $(WWW_CONTENT)
 
 all: mkdirs $(BINS)
 
-mkdirs:
+submodules: .gitmodules sdk/esp_iot_rtos_sdk
+	@-git submodule update --init --recursive
+
+mkdirs: submodules
 	@-mkdir -p $(BUILD_DIR)
 
 $(TARGET_OUT): $(BUILD_DIR)/libuser.a
@@ -91,40 +103,42 @@ $(TARGET_OUT): $(BUILD_DIR)/libuser.a
 
 $(BINS): $(TARGET_OUT)
 	$(ESPTOOL) elf2image $^
-	@echo "The binaries are done.  \"make flash\" to burn them to device, if needed"
+	@echo "The binaries are done. \"make flash\" to burn them to device, if needed"
 
 $(BUILD_DIR)/libuser.a: $(OBJ)
 	$(AR) cru $@ $^
 	
-$(BUILD_DIR)/%.o: $(SRCDIR)/%.c $(wildcard $(SRCDIR)/*.h)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+# $(BUILD_DIR)/%.o: $(SRCDIR)/%.c $(wildcard $(SRCDIR)/*.h)
+# 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(BUILD_DIR)/%.o: $(SRCDIR)/%.cpp $(wildcard $(SRCDIR)/*.h)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-ESP_CMD := $(ESPTOOL) --port $(PORT) --baud $(SPEED)
+$(WWW_CONTENT): mkdirs
+	python $(COMPRESSOR) $(WWW_DIR) $@ $(WWW_MAXSZ)
 
-flash: needs_port flashweb
-	-$(ESP_CMD) write_flash 0x11000 $(TARGET_OUT)-0x11000.bin 0x00000 $(TARGET_OUT)-0x00000.bin
+flash: flashbins flashweb
 
-$(WWW_CONTENT):
-	python $(COMPRESSOR) $(WWW_DIR) $@ $(WWW_MAXSIZE)
+flashbins: needs_port
+	$(ESP_CMD) write_flash 0x11000 $(TARGET_OUT)-0x11000.bin 0x00000 $(TARGET_OUT)-0x00000.bin
 
 flashweb: $(WWW_CONTENT)
-	-$(ESP_CMD) write_flash $(WWW_ADDRS) $^
+	$(ESP_CMD) write_flash $(WWW_ADDRS) $^
 
 flashdump: needs_port
-	-$(ESP_CMD) read_flash 0x0000 0x80000 flash.dump
+	$(ESP_CMD) read_flash 0x0000 0x80000 flash.dump
 	xxd flash.dump > flash.hex
+	$(shell cat flash.hex)
 
 flasherase: needs_port
 	$(ESPTOOL) --port $(PORT) erase_flash
 
 clean:
-	-$(shell if [[ -d $(BUILD_DIR) ]]; then rm -rf $(BUILD_DIR); fi)
+	# -$(shell if [[ -d $(BUILD_DIR) ]]; then rm -rf $(BUILD_DIR); fi)
+	rm -rf $(BUILD_DIR) *.(dump|hex)
 	$(shell git checkout -- build/release/)
 
-fresh: clean $(BINS) flash
+fresh: clean flash
 
 needs_port:
 
