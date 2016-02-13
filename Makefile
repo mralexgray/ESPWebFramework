@@ -28,7 +28,7 @@ ROOT_DIR   :=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 SDKBASE		 ?= $(ROOT_DIR)/sdk
 SRCDIR 		 := src
 
-WWW_DIR		 := www
+WWW_DIR		 := www.altº
 WWW_BIN    := webcontent.bin
 WWW_MAXSZ	 := 57344
 COMPRESSOR := script/binarydir.py
@@ -82,7 +82,7 @@ OBJ  			 := $(addprefix $(BUILD_DIR)/, 																									\
 WWW_CONTENT = $(BUILD_DIR)/$(WWW_BIN)
 WWW_ADDRS		= 0x6D000
 
-.PHONY: all flash clean flashweb flashdump flasherase fresh mkdirs submodules $(WWW_CONTENT)
+.PHONY: all flash clean flashweb flashdump flasherase fresh mkdirs submodules $(WWW_CONTENT) format
 
 all: mkdirs $(BINS)
 
@@ -111,7 +111,9 @@ $(BUILD_DIR)/libuser.a: $(OBJ)
 # $(BUILD_DIR)/%.o: $(SRCDIR)/%.c $(wildcard $(SRCDIR)/*.h)
 # 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-$(BUILD_DIR)/%.o: $(SRCDIR)/%.cpp $(wildcard $(SRCDIR)/*.h)
+INCS := $(wildcard include/*)
+
+$(BUILD_DIR)/%.o: $(SRCDIR)/%.cpp $(INCS)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(WWW_CONTENT): mkdirs
@@ -139,6 +141,11 @@ clean:
 	$(shell git checkout -- build/release/)
 
 fresh: clean flash
+
+FORMATEES := $(wildcard $(SRCDIR)/*) $(INCS)
+
+format: $(FORMATEES) .clang-format
+	clang-format -i $^
 
 needs_port:
 
